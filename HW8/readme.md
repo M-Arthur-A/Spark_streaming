@@ -36,19 +36,19 @@ hdfs dfs -put ./source /user/student910_14/hw8/
 
 # Работа с Kafka
 
-1. Создание topic `910_14_trainDataset` с данными для обучения:
+1. Создание topic `910_14_testDataset` с входящими данными:
 
 ```bash
-/usr/hdp/3.1.4.0-315/kafka/bin/kafka-topics.sh --create --topic 910_14_trainDataset --zookeeper bigdataanalytics2-worker-shdpt-v31-1-4:2181 --partitions 3 --replication-factor 2 --config retention.ms=17280000000
+/usr/hdp/3.1.4.0-315/kafka/bin/kafka-topics.sh --create --topic 910_14_testDataset --zookeeper bigdataanalytics2-worker-shdpt-v31-1-4:2181 --partitions 3 --replication-factor 2 --config retention.ms=17280000000
 ```
 
-2. Создание topic `910_14_testDataset` с данными для валидации:
+2. Создание topic `910_14_resDataset` для выгрузки предсказаний:
 
 ```bash
-/usr/hdp/3.1.4.0-315/kafka/bin/kafka-topics.sh --create --topic lesson2_topic --zookeeper bigdataanalytics2-worker-shdpt-v31-1-4:2181 --partitions 3 --replication-factor 2 --config retention.ms=17280000000
+/usr/hdp/3.1.4.0-315/kafka/bin/kafka-topics.sh --create --topic 910_14_resDataset --zookeeper bigdataanalytics2-worker-shdpt-v31-1-4:2181 --partitions 3 --replication-factor 2 --config retention.ms=17280000000
 ```
 
-3. Загрузка данных в соответствующие topic'и:
+3. Загрузка данных в соответствующий topic - `910_14_testDataset`:
 
 ```python
 ### orders_data_uploader.py ###
@@ -90,10 +90,6 @@ if __name__ == '__main__':
     orders = read_orders(orders_file_path)
     # upload orders to kafka
     upload_orders_to_kafka(kafka_host, kafka_target_topic, orders)
-```
-
-```bash
-python3.7 orders_data_uploader.py train.json bigdataanalytics2-worker-shdpt-v31-1-5:6667 910_14_trainDataset
 ```
 
 ```bash
@@ -150,13 +146,14 @@ if __name__ == '__main__':
         .format("csv")\
         .options(inferSchema=True, header=True) \
         .load(data_path)
+    #data = data.repartition(20)
     model_data = prepare(data)
     train, test = model_data.randomSplit([0.8, 0.2], seed=42)
-
-    # обучение модели
+    
+    # обучение модели. maxIter должно быть 100 (но модель получается тяжелой и кластер ее не пускает)
     model = GBTRegressor(featuresCol="features", 
                          labelCol=target_name, 
-                         maxIter=100)
+                         maxIter=16)
     model = model.fit(train)
 
     # оценка модели
@@ -172,7 +169,7 @@ if __name__ == '__main__':
     model.write().overwrite().save(model_dir + "/model")
 ```
 
-# Использование модели на потоках
+# Использование модели на данных из потока
 
 ```python
 ### submit_batch-predictions.py ###
@@ -180,11 +177,14 @@ import json
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StringType
-from pyspark.ml.regression import GBTRegressor
+from pyspark.ml.regression import GBTRegressor, GBTRegressionModel
 from pyspark.ml.feature import VectorAssembler, StringIndexer
 
-
-spark = SparkSession.builder.appName("ML910_14_predict").getOrCreate()
+# .config('spark.jars', 'jar/snowflake-jdbc-3.13.4.jar,jar/spark-snowflake_2.12-2.9.0-spark_3.1.jar') \
+spark = SparkSession \
+        .builder \
+        .appName("ML910_14_predict") \
+        .getOrCreate()
 
 ## CONSTANTS
 checkpoint_location = "tmp/ml_checkpoint"
@@ -234,8 +234,9 @@ def prepare(data_to_prepare):
     return data_to_prepare
 
 def process_batch(df, epoch):
-    model_data = prepare_data(df)
+    model_data = prepare(df)
     prediction = model.transform(model_data)
+    kafka_output(prediction, 5, kafka_topic_res)
     prediction.show()
 
 def foreach_batch_output(df):
@@ -258,8 +259,20 @@ def console_output(df, freq):
 	    .options(truncate=False) \
 	    .start()
 
+def kafka_output(df, freq, topic):
+    return df \
+        .writeStream \
+        .format("kafka") \
+        .trigger(processingTime='%s seconds' % freq) \
+        .option("topic", topic) \
+        .option("kafka.bootstrap.servers", kafka_brokers) \
+        .option("checkpointLocation", checkpoint_location) \
+        .start()
+
+
 kafka_brokers = "bigdataanalytics2-worker-shdpt-v31-1-0:6667"
 kafka_topic = "910_14_testDataset"
+kafka_topic_res = "910_14_resDataset"
 
 data = spark.readStream. \
        format("kafka"). \
@@ -273,7 +286,7 @@ data = data \
        .select("value.*")
 # stream = console_output(data, 10)
 
-model = GBTRegressor.load(model_dir + "/model")
+model = GBTRegressionModel.load(model_dir + "/model")
 stream = foreach_batch_output(data)
 #stream.stop()
 
