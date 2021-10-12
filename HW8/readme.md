@@ -39,13 +39,13 @@ hdfs dfs -put ./source /user/student910_14/hw8/
 1. Создание topic `910_14_testDataset` с входящими данными:
 
 ```bash
-/usr/hdp/3.1.4.0-315/kafka/bin/kafka-topics.sh --create --topic 910_14_testDataset --zookeeper bigdataanalytics2-worker-shdpt-v31-1-4:2181 --partitions 3 --replication-factor 2 --config retention.ms=17280000000
+/usr/hdp/3.1.4.0-315/kafka/bin/kafka-topics.sh --create --topic 910_14_testDataset --zookeeper bigdataanalytics2-worker-shdpt-v31-1-5:2181 --partitions 3 --replication-factor 2 --config retention.ms=17280000000
 ```
 
 2. Создание topic `910_14_resDataset` для выгрузки предсказаний:
 
 ```bash
-/usr/hdp/3.1.4.0-315/kafka/bin/kafka-topics.sh --create --topic 910_14_resDataset --zookeeper bigdataanalytics2-worker-shdpt-v31-1-4:2181 --partitions 3 --replication-factor 2 --config retention.ms=17280000000
+/usr/hdp/3.1.4.0-315/kafka/bin/kafka-topics.sh --create --topic 910_14_resDataset --zookeeper bigdataanalytics2-worker-shdpt-v31-1-5:2181 --partitions 3 --replication-factor 2 --config retention.ms=17280000000
 ```
 
 3. Загрузка данных в соответствующий topic - `910_14_testDataset`:
@@ -172,11 +172,12 @@ if __name__ == '__main__':
 # Использование модели на данных из потока
 
 ```python
+# -*- coding: utf-8 -*-
 ### submit_batch-predictions.py ###
 import json
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StringType
+from pyspark.sql.types import StructType, StringType, IntegerType, FloatType
 from pyspark.ml.regression import GBTRegressor, GBTRegressionModel
 from pyspark.ml.feature import VectorAssembler, StringIndexer
 
@@ -196,23 +197,24 @@ target_name = 'Price'
 schema = StructType() \
 		 .add("Id", StringType()) \
 		 .add("DistrictId", StringType()) \
-		 .add("Rooms", StringType()) \
-		 .add("Square", StringType()) \
-		 .add("LifeSquare", StringType()) \
-		 .add("KitchenSquare", StringType()) \
-		 .add("Floor", StringType()) \
-		 .add("HouseFloor", StringType()) \
-		 .add("HouseYear", StringType()) \
+		 .add("Rooms", IntegerType()) \
+		 .add("Square", FloatType()) \
+		 .add("LifeSquare", FloatType()) \
+		 .add("KitchenSquare", IntegerType()) \
+		 .add("Floor", IntegerType()) \
+		 .add("HouseFloor", IntegerType()) \
+		 .add("HouseYear", IntegerType()) \
 		 .add("Ecology_1", StringType()) \
 		 .add("Ecology_2", StringType()) \
 		 .add("Ecology_3", StringType()) \
-		 .add("Social_1", StringType()) \
-		 .add("Social_2", StringType()) \
-		 .add("Social_3", StringType()) \
-		 .add("Healthcare_1", StringType()) \
-		 .add("Helthcare_2", StringType()) \
-		 .add("Shops_1", StringType()) \
+		 .add("Social_1", IntegerType()) \
+		 .add("Social_2", IntegerType()) \
+		 .add("Social_3", IntegerType()) \
+		 .add("Healthcare_1", IntegerType()) \
+		 .add("Helthcare_2", IntegerType()) \
+		 .add("Shops_1", IntegerType()) \
 		 .add("Shops_2", StringType())
+schema = StructType.fromJson(json.loads('{"fields":[{"metadata":{},"name":"Id","nullable":true,"type":"string"},{"metadata":{},"name":"DistrictId","nullable":true,"type":"string"},{"metadata":{},"name":"Rooms","nullable":true,"type":"integer"},{"metadata":{},"name":"Square","nullable":true,"type":"float"},{"metadata":{},"name":"LifeSquare","nullable":true,"type":"float"},{"metadata":{},"name":"KitchenSquare","nullable":true,"type":"integer"},{"metadata":{},"name":"Floor","nullable":true,"type":"integer"},{"metadata":{},"name":"HouseFloor","nullable":true,"type":"integer"},{"metadata":{},"name":"HouseYear","nullable":true,"type":"integer"},{"metadata":{},"name":"Ecology_1","nullable":true,"type":"string"},{"metadata":{},"name":"Ecology_2","nullable":true,"type":"string"},{"metadata":{},"name":"Ecology_3","nullable":true,"type":"string"},{"metadata":{},"name":"Social_1","nullable":true,"type":"integer"},{"metadata":{},"name":"Social_2","nullable":true,"type":"integer"},{"metadata":{},"name":"Social_3","nullable":true,"type":"integer"},{"metadata":{},"name":"Healthcare_1","nullable":true,"type":"integer"},{"metadata":{},"name":"Helthcare_2","nullable":true,"type":"integer"},{"metadata":{},"name":"Shops_1","nullable":true,"type":"integer"},{"metadata":{},"name":"Shops_2","nullable":true,"type":"string"}],"type":"struct"}'))
 
 # необходимые функции
 def prepare(data_to_prepare):
@@ -270,7 +272,7 @@ def kafka_output(df, freq, topic):
         .start()
 
 
-kafka_brokers = "bigdataanalytics2-worker-shdpt-v31-1-0:6667"
+kafka_brokers = "bigdataanalytics2-worker-shdpt-v31-1-4:6667"
 kafka_topic = "910_14_testDataset"
 kafka_topic_res = "910_14_resDataset"
 
